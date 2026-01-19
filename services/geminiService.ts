@@ -1,49 +1,9 @@
-import { GoogleGenAI, Type, Schema, Chat } from "@google/genai";
+import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { Question, DocReference, ImageSize } from "../types";
 import { APP_CONFIG } from "../config";
 
-const getClient = async (requiresUserKey = false): Promise<GoogleGenAI> => {
-  const win = window as any;
-  if (requiresUserKey && win.aistudio) {
-    const hasKey = await win.aistudio.hasSelectedApiKey();
-    if (!hasKey) {
-      await win.aistudio.openSelectKey();
-    }
-    return new GoogleGenAI({ apiKey: process.env.API_KEY });
-  }
+const getClient = async (): Promise<GoogleGenAI> => {
   return new GoogleGenAI({ apiKey: process.env.API_KEY });
-};
-
-// --- Chat Service ---
-
-let chatSession: Chat | null = null;
-
-export const sendMessageToChat = async (message: string, context?: string): Promise<string> => {
-  try {
-    const ai = await getClient();
-
-    if (!chatSession) {
-      chatSession = ai.chats.create({
-        model: APP_CONFIG.MODELS.CHAT,
-        config: {
-          systemInstruction: `あなたは学習アプリの優秀なメンターです。
-          ユーザーは多肢選択式の問題を解いています。
-          質問には簡潔かつ分かりやすく、日本語で答えてください。
-          必要であれば具体的なコード例や例え話を用いてください。`,
-        },
-      });
-    }
-
-    const fullMessage = context
-      ? `[現在の問題コンテキスト]\n${context}\n\n[ユーザーの質問]\n${message}`
-      : message;
-
-    const response = await chatSession.sendMessage({ message: fullMessage });
-    return response.text || "申し訳ありません。応答を生成できませんでした。";
-  } catch (error) {
-    console.error("Chat error:", error);
-    return "エラーが発生しました。もう一度お試しください。";
-  }
 };
 
 // --- Similar Problem Generation ---
@@ -264,34 +224,47 @@ export const findOfficialDocumentation = async (questionText: string, category: 
   }
 };
 
+// --- Chat Bot ---
+
+export const sendMessageToChat = async (message: string, context: string): Promise<string> => {
+  try {
+    const ai = await getClient();
+    const response = await ai.models.generateContent({
+      model: APP_CONFIG.MODELS.GENERATION,
+      contents: message,
+      config: {
+        systemInstruction: `You are a friendly and knowledgeable AI Mentor helping a student with the following topic: ${context}. Answer questions clearly, concisely, and accurately. If the user asks about specific exam topics, provide detailed explanations.`,
+      }
+    });
+    return response.text || "申し訳ありません。回答を生成できませんでした。";
+  } catch (error) {
+    console.error("Chat error:", error);
+    return "エラーが発生しました。時間を置いて再度お試しください。";
+  }
+};
+
 // --- Image Generation ---
 
 export const generateStudyImage = async (prompt: string, size: ImageSize): Promise<string | null> => {
   try {
-    const ai = await getClient(true);
-
+    const ai = await getClient();
+    
     const response = await ai.models.generateContent({
-      model: APP_CONFIG.MODELS.IMAGE,
+      model: 'gemini-3-pro-image-preview', // Supports 1K, 2K, 4K
       contents: {
-        parts: [
-          { text: prompt }
-        ]
+        parts: [{ text: prompt }]
       },
       config: {
         imageConfig: {
-          aspectRatio: "16:9",
-          imageSize: size
+          imageSize: size, // '1K', '2K', '4K'
+          aspectRatio: "16:9" 
         }
       }
     });
 
-    if (response.candidates?.[0]?.content?.parts) {
-      for (const part of response.candidates[0].content.parts) {
-        if (part.inlineData) {
-          const base64EncodeString = part.inlineData.data;
-          const mimeType = part.inlineData.mimeType || 'image/png';
-          return `data:${mimeType};base64,${base64EncodeString}`;
-        }
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
+      if (part.inlineData && part.inlineData.data) {
+        return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
       }
     }
     return null;

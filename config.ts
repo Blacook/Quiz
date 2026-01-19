@@ -10,10 +10,8 @@ export const APP_CONFIG = {
 
   // Gemini Model Configurations
   MODELS: {
-    CHAT: 'gemini-3-pro-preview',
     GENERATION: 'gemini-3-pro-preview',
     SEARCH: 'gemini-3-flash-preview',
-    IMAGE: 'gemini-3-pro-image-preview',
   },
 
   // Session Settings

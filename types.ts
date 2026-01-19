@@ -12,6 +12,7 @@ export interface Question {
   category: string;
   tags: string[];
   urls?: string[];
+  verified?: boolean; // New property to track verification status
 }
 
 export interface UserStats {

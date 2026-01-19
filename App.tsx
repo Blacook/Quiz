@@ -7,12 +7,10 @@ import { formatTime } from './utils/common';
 
 // Services & Hooks
 import { generateSimilarQuestion, findOfficialDocumentation, fixQuestion } from './services/geminiService';
-import { StorageService } from './services/storageService';
 import { useQuizSession } from './hooks/useQuizSession';
 
 // Components
 import StatsDashboard from './components/StatsDashboard';
-import ChatBot from './components/ChatBot';
 import FixDialog from './components/FixDialog';
 import QuestionCard from './components/QuestionCard';
 
@@ -31,11 +29,11 @@ const App: React.FC = () => {
     submitAnswer,
     nextQuestion,
     updateQuestion,
-    addQuestion
+    addQuestion,
+    toggleVerifyQuestion
   } = useQuizSession(mockQuestions);
 
   // Local UI State
-  const [verifiedIds, setVerifiedIds] = useState<string[]>([]);
   const [isGeneratingSimilar, setIsGeneratingSimilar] = useState(false);
   const [loadingSimilarError, setLoadingSimilarError] = useState<string|null>(null);
   const [isFixing, setIsFixing] = useState(false);
@@ -43,15 +41,6 @@ const App: React.FC = () => {
   const [fixFeedback, setFixFeedback] = useState("");
   const [docLinks, setDocLinks] = useState<DocReference[]>([]);
   const [isSearchingDocs, setIsSearchingDocs] = useState(false);
-
-  // Sync Verified IDs with Storage
-  useEffect(() => {
-    setVerifiedIds(StorageService.getVerifiedIds());
-  }, []);
-
-  useEffect(() => {
-    StorageService.saveVerifiedIds(verifiedIds);
-  }, [verifiedIds]);
 
   // Auto-search documentation
   useEffect(() => {
@@ -91,13 +80,7 @@ const App: React.FC = () => {
 
   const toggleVerify = () => {
       if (!currentQuestion) return;
-      setVerifiedIds(prev => {
-          if (prev.includes(currentQuestion.id)) {
-              return prev.filter(id => id !== currentQuestion.id);
-          } else {
-              return [...prev, currentQuestion.id];
-          }
-      });
+      toggleVerifyQuestion(currentQuestion.id);
   };
 
   const openFixDialog = () => {
@@ -112,10 +95,11 @@ const App: React.FC = () => {
       try {
           const fixedQ = await fixQuestion(currentQuestion, APP_CONFIG.CONTEXT, fixFeedback);
           if (fixedQ) {
+              // Preserve verified status if needed, or reset it. Currently resetting as content changed.
               updateQuestion(fixedQ);
-              // Un-verify if it was verified
-              if (verifiedIds.includes(fixedQ.id)) {
-                  setVerifiedIds(prev => prev.filter(id => id !== fixedQ.id));
+              // If previously verified, we might want to un-verify because content changed
+              if (currentQuestion.verified) {
+                  toggleVerifyQuestion(fixedQ.id); // Toggle off if it was on
               }
               alert("問題を修正しました。内容が更新されました。");
           } else {
@@ -142,7 +126,7 @@ const App: React.FC = () => {
                 <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
                     {APP_CONFIG.NAME}
                 </h1>
-                <span className="text-xs text-slate-400 font-medium tracking-wide">Context: {APP_CONFIG.CONTEXT}</span>
+                <span className="text-xs text-slate-400 font-medium tracking-wide">Cert: {APP_CONFIG.CONTEXT}</span>
             </div>
             <div className="flex items-center gap-2 text-slate-500 font-mono bg-white px-3 py-1 rounded-full border border-slate-200 shadow-sm">
                 <Clock className="w-4 h-4" />
@@ -158,7 +142,7 @@ const App: React.FC = () => {
           totalQuestions={sessionQueue.length}
           selectedOptions={selectedOptions}
           isAnswered={isAnswered}
-          isVerified={verifiedIds.includes(currentQuestion.id)}
+          isVerified={!!currentQuestion.verified}
           docLinks={docLinks}
           isSearchingDocs={isSearchingDocs}
           isFixing={isFixing}
@@ -172,8 +156,6 @@ const App: React.FC = () => {
           onGenerateSimilar={handleGenerateSimilar}
         />
       </div>
-
-      <ChatBot currentContext={currentQuestion && isAnswered ? `現在の問題: ${currentQuestion.text}\n正解: ${currentQuestion.explanation}` : `現在の問題: ${currentQuestion?.text || ''}`} />
       
       <FixDialog 
         isOpen={isFixDialogOpen}

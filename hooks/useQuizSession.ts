@@ -6,7 +6,16 @@ import { APP_CONFIG } from '../config';
 
 // Hook now accepts questions as an argument for better testing and flexibility (DIP)
 export const useQuizSession = (initialQuestions: Question[]) => {
-  const [allQuestions, setAllQuestions] = useState<Question[]>(initialQuestions);
+  // Initialize questions by merging with verified status from storage
+  const [allQuestions, setAllQuestions] = useState<Question[]>(() => {
+    const verifiedIds = StorageService.getVerifiedIds();
+    return initialQuestions.map(q => ({
+      ...q,
+      // Priority: Storage > File default > false
+      verified: verifiedIds.includes(q.id) || q.verified || false
+    }));
+  });
+
   const [sessionQueue, setSessionQueue] = useState<Question[]>([]);
   const [currentQIndex, setCurrentQIndex] = useState(0);
   const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
@@ -143,6 +152,23 @@ export const useQuizSession = (initialQuestions: Question[]) => {
     setAllQuestions(prev => [...prev, newQ]);
   };
 
+  // Toggle verified status and sync with storage
+  const toggleVerifyQuestion = (questionId: string) => {
+    // Helper to sync with storage
+    const syncStorage = (questions: Question[]) => {
+        const ids = questions.filter(q => q.verified).map(q => q.id);
+        StorageService.saveVerifiedIds(ids);
+    };
+
+    setAllQuestions(prev => {
+        const updated = prev.map(q => q.id === questionId ? { ...q, verified: !q.verified } : q);
+        syncStorage(updated);
+        return updated;
+    });
+
+    setSessionQueue(prev => prev.map(q => q.id === questionId ? { ...q, verified: !q.verified } : q));
+  };
+
   return {
     allQuestions,
     sessionQueue,
@@ -157,5 +183,6 @@ export const useQuizSession = (initialQuestions: Question[]) => {
     nextQuestion,
     updateQuestion,
     addQuestion,
+    toggleVerifyQuestion,
   };
 };
